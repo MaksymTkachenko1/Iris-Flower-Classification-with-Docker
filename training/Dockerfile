@@ -1,27 +1,29 @@
-# Dockerfile for training
-# Start from a base Python image
-FROM python:3.10
+# Stage 1: Builder
+FROM python:3.10-slim AS builder
 
-# Initialize settings_name variable with the default value
-ARG settings_name=settings.json
-ENV CONF_PATH=${settings_name}
-
-# Changing the path to the working directory in the container
 WORKDIR /app
 
-# Copy data folder to Docker
-COPY data/ /app/data
+COPY requirements.txt /app/
+RUN pip install -r requirements.txt -f https://download.pytorch.org/whl/torch_stable.html
 
-# Copy the code itself
-COPY training /app/training
+# Stage 2: Runtime
+FROM python:3.10-slim
 
-# Copy utils.py
-COPY utils.py /app
-COPY ${CONF_PATH} /app
+WORKDIR /app
 
-# Install any necessary packages listed in requirements.txt
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy only the installed packages from the builder stage
+COPY --from=builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
+
+# Copy the necessary files from the project
+COPY data_process/data_download.py /app/data_process/
+COPY settings.json /app/
+COPY training/ /app/training/
+
+RUN chmod +x /app/data_process/data_download.py
+RUN python /app/data_process/data_download.py
+
+# Define the volume for data
+VOLUME /app/data
 
 # Train the model
-RUN python3 training/train.py
+CMD ["python", "training/train.py"]

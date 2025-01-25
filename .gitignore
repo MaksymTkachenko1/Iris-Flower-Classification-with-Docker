@@ -1,21 +1,32 @@
-# Byte-compiled / optimized / DLL files
+# Git
+.git
+
+# Python
 __pycache__/
-*.py[cod]
-.vscode
-
-# Directories
-data/
-models/
-results/
-mlruns/
-
-# File Extensions
-*.csv
-*.pickle
 *.pyc
+*.pyo
+*.pyd
 
-# Environment Variables
+# Virtual environment
+.venv/
+venv/
+
+# VS Code settings
+.vscode/
+
+# Models 
+models/
+*.pth
+
+# Output and data
+output/
+data/
+
+# dotenv files
 .env
 
-# Installer logs
-pip-log.txt
+# Logs
+*.log
+
+# Data files
+*.csv

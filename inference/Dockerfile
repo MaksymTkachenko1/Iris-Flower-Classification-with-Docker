@@ -1,29 +1,30 @@
-# Dockerfile for training
-# Start from a base Python image
-FROM python:3.10
-
-ARG model_name=prod_model.pickle
-ARG settings_name=settings.json
-ENV CONF_PATH=${settings_name}
+# Stage 1: Builder
+FROM python:3.10-slim AS builder
 
 WORKDIR /app
 
-# Copy data folder to Docker
-COPY data/ /app/data
+COPY requirements.txt /app/
+RUN pip install -r requirements.txt -f https://download.pytorch.org/whl/torch_stable.html
 
-# Copy models folder to Docker
-COPY models/${model_name} /app/models/${model_name}.pickle
+# Stage 2: Runtime
+FROM python:3.10-slim
 
-# Copy the code itself
-COPY inference /app/inference
+# Set environment variables
+ARG model_name=iris_model.pth
+ENV MODEL_NAME=${model_name}
 
-# Copy usefull scripts and configs
-COPY utils.py /app
-COPY ${CONF_PATH} /app
+WORKDIR /app
 
-# Install any necessary packages listed in requirements.txt
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy only the installed packages from the builder stage
+COPY --from=builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
 
-# Train the model
-RUN python3 inference/run.py
+# Copy the necessary files into the container
+COPY data/ /app/data/
+COPY models/ /app/models/
+COPY inference/ /app/inference/
+COPY training/ /app/training/  
+COPY settings.json /app/
+
+# Use ENTRYPOINT for the main command and CMD for default parameters
+ENTRYPOINT ["python", "/app/inference/run.py"]
+CMD ["--settings_path", "/app/settings.json"]

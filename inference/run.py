@@ -1,111 +1,103 @@
-"""
-Script loads the latest trained model, data for inference and predicts results.
-Imports necessary packages and modules.
-"""
-
-import argparse
-import json
-import logging
-import os
-import pickle
-import sys
-from datetime import datetime
-from typing import List
-
 import pandas as pd
-from sklearn.tree import DecisionTreeClassifier
+import json
+import os
+import argparse
+import logging
+import sys
+import torch
+from sklearn.metrics import accuracy_score
 
-# Adds the root directory to system path
-ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.dirname(ROOT_DIR))
+sys.path.append('/app')
+from training.train import SimpleClassifier  # Import the SimpleClassifier model
 
-# Change to CONF_FILE = "settings.json" if you have problems with env variables
-CONF_FILE = os.getenv('CONF_PATH')
+def run_inference(settings_path: str, model_name: str, output_folder: str):
+    """Runs inference on the test data, calculates the test accuracy, and saves the predictions."""
+    logging.info("Starting inference...")
 
-from utils import get_project_dir, configure_logging
-
-# Loads configuration settings from JSON
-with open(CONF_FILE, "r") as file:
-    conf = json.load(file)
-
-# Defines paths
-DATA_DIR = get_project_dir(conf['general']['data_dir'])
-MODEL_DIR = get_project_dir(conf['general']['models_dir'])
-RESULTS_DIR = get_project_dir(conf['general']['results_dir'])
-
-# Initializes parser for command line arguments
-parser = argparse.ArgumentParser()
-parser.add_argument("--infer_file", 
-                    help="Specify inference data file", 
-                    default=conf['inference']['inp_table_name'])
-parser.add_argument("--out_path", 
-                    help="Specify the path to the output table")
-
-
-def get_latest_model_path() -> str:
-    """Gets the path of the latest saved model"""
-    latest = None
-    for (dirpath, dirnames, filenames) in os.walk(MODEL_DIR):
-        for filename in filenames:
-            if not latest or datetime.strptime(latest, conf['general']['datetime_format'] + '.pickle') < \
-                    datetime.strptime(filename, conf['general']['datetime_format'] + '.pickle'):
-                latest = filename
-    return os.path.join(MODEL_DIR, latest)
-
-
-def get_model_by_path(path: str) -> DecisionTreeClassifier:
-    """Loads and returns the specified model"""
+    # Load settings
     try:
-        with open(path, 'rb') as f:
-            model = pickle.load(f)
-            logging.info(f'Path of the model: {path}')
-            return model
-    except Exception as e:
-        logging.error(f'An error occurred while loading the model: {e}')
-        sys.exit(1)
+        with open(settings_path, 'r') as f:
+            settings = json.load(f)
+    except FileNotFoundError:
+        logging.error(f"Settings file not found at {settings_path}")
+        return
 
+    # Load the model
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = SimpleClassifier().to(device)
+    model_path = os.path.join(settings["general"]["models_dir"], model_name)
+    logging.info(f"Loading model from: {model_path}")
 
-def get_inference_data(path: str) -> pd.DataFrame:
-    """loads and returns data for inference from the specified csv file"""
     try:
-        df = pd.read_csv(path)
-        return df
+        model.load_state_dict(torch.load(model_path, map_location=device))
+        model.eval()  # Set the model to evaluation mode
+        logging.info("Model loaded successfully.")
+    except FileNotFoundError:
+        logging.error(f"Error: Model file not found at {model_path}")
+        return
     except Exception as e:
-        logging.error(f"An error occurred while loading inference data: {e}")
-        sys.exit(1)
+        logging.error(f"Error loading the model: {e}")
+        return
 
+    # Load inference data
+    inference_data_path = os.path.join(settings["general"]["data_dir"], settings["inference"]["test_data"])
+    logging.info(f"Loading inference data from: {inference_data_path}")
 
-def predict_results(model: DecisionTreeClassifier, infer_data: pd.DataFrame) -> pd.DataFrame:
-    """Predict de results and join it with the infer_data"""
-    results = model.predict(infer_data)
-    infer_data['results'] = results
-    return infer_data
+    try:
+        df = pd.read_csv(inference_data_path)
+        logging.info(f"Inference data loaded. Shape: {df.shape}")
+    except FileNotFoundError:
+        logging.error(f"Error: Inference data file not found at {inference_data_path}")
+        return
 
+    # Prepare data
+    try:
+        X = df.drop('target', axis=1).values  # Assuming 'target' column exists
+        y = df['target'].values # Extract true labels for evaluation
+        X_tensor = torch.tensor(X, dtype=torch.float32).to(device)
+        logging.info("Inference data prepared for the model.")
+    except KeyError:
+        logging.error("Error: 'target' column not found in inference data.")
+        return
 
-def store_results(results: pd.DataFrame, path: str = None) -> None:
-    """Store the prediction results in 'results' directory with current datetime as a filename"""
-    if not path:
-        if not os.path.exists(RESULTS_DIR):
-            os.makedirs(RESULTS_DIR)
-        path = datetime.now().strftime(conf['general']['datetime_format']) + '.csv'
-        path = os.path.join(RESULTS_DIR, path)
-    pd.DataFrame(results).to_csv(path, index=False)
-    logging.info(f'Results saved to {path}')
+    # Run inference
+    with torch.no_grad():
+        outputs = model(X_tensor)
+        _, predicted = torch.max(outputs, 1)
 
+    logging.info("Inference completed.")
+    
+    # Calculate test accuracy
+    y_pred = predicted.cpu().numpy()
+    accuracy = accuracy_score(y, y_pred)
 
-def main():
-    """Main function"""
-    configure_logging()
-    args = parser.parse_args()
+    logging.info(f"Test Accuracy: {accuracy:.4f}")
 
-    model = get_model_by_path(get_latest_model_path())
-    infer_file = args.infer_file
-    infer_data = get_inference_data(os.path.join(DATA_DIR, infer_file))
-    results = predict_results(model, infer_data)
-    store_results(results, args.out_path)
+    # Save predictions
+    df['predictions'] = predicted.cpu().numpy()
+    os.makedirs(output_folder, exist_ok=True)
+    output_file = os.path.join(output_folder, settings["inference"]["output_name"])
+    logging.info(f"Saving predictions to: {output_file}")
 
-    logging.info(f'Prediction results: {results}')
-
+    try:
+        df.to_csv(output_file, index=False)
+        logging.info(f"Predictions saved successfully to: {output_file}")
+    except Exception as e:
+        logging.error(f"Error saving predictions: {e}")
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Run inference with a trained model.")
+    parser.add_argument(
+        "--settings_path", type=str, default="settings.json", help="Path to the settings JSON file."
+    )
+    parser.add_argument(
+        "--model_name", type=str, default="iris_model.pth", help="Name of the model file to load."
+    )
+    parser.add_argument(
+        "--output_folder", type=str, default="/app/output", help="Folder to save the predictions."
+    )
+    args = parser.parse_args()
+
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+    run_inference(args.settings_path, args.model_name, args.output_folder)
