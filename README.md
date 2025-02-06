@@ -16,14 +16,13 @@ Homework_Maksym_Tkachenko_MLE/
 │   └── run.py                  # Inference script
 │   └── Dockerfile              # Dockerfile for inference image
 ├── training/
-│   └── train.py                # Training script
+│   └── train.py                # Training script, including the model definition
 │   └── Dockerfile              # Dockerfile for training image
 ├── .gitignore                  # Specifies files and directories to be ignored by Git
 ├── README.md                   # This file
 ├── __init__.py                 
 ├── requirements.txt            # Lists project dependencies
 ├── settings.json               # Configuration file for training and inference
-└── utils.py                    # Contains utility functions, including the model definition
 ```
 
 **Note**: The directories `data/`, `models/`, and `output/` are not present in the initial repository structure. They are created during the data processing, training and inference, respectively.
@@ -53,7 +52,7 @@ The `data_download.py` script also preprocesses the dataset. It converts categor
 
 ## Model
 
-The model used for classification is a simple fully connected neural network defined in `utils.py`. It consists of:
+The model used for classification is a simple fully connected neural network defined in `train.py`. It consists of:
 
 *   An input layer with 4 neurons (corresponding to the 4 features).
 *   A hidden layer with 64 neurons and ReLU activation.
