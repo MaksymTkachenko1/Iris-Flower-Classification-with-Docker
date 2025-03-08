@@ -79,13 +79,13 @@ The model was trained on the training set and achieved the following performance
 ### 1. Clone the Repository
 
 ```powershell
-git clone https://github.com/MaksymTkachenko1/Homework_Maksym_Tkachenko_MLE.git
+git clone https://github.com/MaksymTkachenko1/Iris-Flower-Classification-with-Docker.git
 ```
 
 ### 2. Navigate to the Project Directory
 
 ```powershell
-cd Homework_Maksym_Tkachenko_MLE
+cd Iris-Flower-Classification-with-Docker
 ```
 
 ### 3. Build the Training Image
